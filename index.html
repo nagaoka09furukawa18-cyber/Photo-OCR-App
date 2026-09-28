@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>スマホ送信アプリ（カメラ＆文字起こし）</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+            background-color: #f4f7f6;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 480px;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            box-sizing: border-box;
+        }
+        h2 {
+            margin-top: 0;
+            font-size: 1.2rem;
+            color: #333;
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 8px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #555;
+            font-size: 0.95rem;
+        }
+        /* カメラ起動・ファイル選択用のボタンスタイル */
+        .file-btn {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            background-color: #27ae60;
+            color: #fff;
+            text-align: center;
+            font-weight: bold;
+            font-size: 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            box-sizing: border-box;
+            border: none;
+        }
+        .file-btn:active {
+            background-color: #219653;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        /* プレビュー表示エリア */
+        .preview-area {
+            margin-top: 15px;
+            text-align: center;
+        }
+        #previewImg {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            display: none;
+        }
+        /* ステータス表示 */
+        #statusMsg {
+            margin-top: 15px;
+            padding: 10px;
+            background: #eef9f2;
+            border: 1px solid #d4edda;
+            border-radius: 4px;
+            color: #27ae60;
+            font-size: 0.9rem;
+            text-align: center;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>スマホ送信ツール</h2>
+
+    <div class="form-group">
+        <label>写真を撮影してAI文字起こし＆送信</label>
+        <!-- スマホのカメラを直接起動する場合: capture="environment" を付与 -->
+        <label for="cameraInput" class="file-btn">📷 カメラで撮影 / 画像選択</label>
+        <input type="file" id="cameraInput" accept="image/*" capture="environment" onchange="handleImageSelect(event)">
+    </div>
+
+    <div class="preview-area">
+        <img id="previewImg" alt="プレビュー画像">
+    </div>
+
+    <div id="statusMsg"></div>
+</div>
+
+<script>
+    // 先ほど作成したGASのウェブアプリURLを指定してください
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbw-_EmCBxXqysI_UyfOLZhS-XjEuUFggD1dWrYRMzQhOJ4cwicnGpjt8F1Fxo8K6eBD/exec";
+
+    /**
+     * 画像が選択・撮影されたときの処理
+     */
+    function handleImageSelect(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        showStatus("画像を縮小・軽量化中...", "#333", "#f0f0f0");
+
+        // Canvasを使って自動縮小（最大幅1280px、画質0.8）
+        compressImage(file, 1280, 0.8)
+            .then(base64Data => {
+                // プレビュー表示
+                const preview = document.getElementById("previewImg");
+                preview.src = base64Data;
+                preview.style.display = "inline-block";
+
+                showStatus("GASへ送信中（AI文字起こし中）...", "#27ae60", "#eef9f2");
+
+                // GASへPOST送信
+                sendDataToGAS({
+                    type: "photo",
+                    image: base64Data
+                });
+            })
+            .catch(err => {
+                console.error(err);
+                showStatus("エラー: 画像の処理に失敗しました", "#c0392b", "#fadbd8");
+            });
+    }
+
+    /**
+     * 画像圧縮関数（Canvas使用）
+     */
+    function compressImage(file, maxWidth, quality) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > maxWidth) {
+                        height = Math.round((height * maxWidth) / width);
+                        width = maxWidth;
+                    }
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    const dataUrl = canvas.toDataURL('image/jpeg', quality);
+                    resolve(dataUrl);
+                };
+                img.onerror = reject;
+                img.src = e.target.result;
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+
+    /**
+     * GASへデータを送信する関数
+     */
+    function sendDataToGAS(payload) {
+        fetch(GAS_URL, {
+            method: "POST",
+            mode: "no-cors", // GASのCORS制限回避
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+        })
+        .then(() => {
+            showStatus("送信＆文字起こしが完了しました！", "#27ae60", "#eef9f2");
+        })
+        .catch(err => {
+            console.error("送信エラー:", err);
+            showStatus("送信エラーが発生しました", "#c0392b", "#fadbd8");
+        });
+    }
+
+    /**
+     * ステータス表示のヘルパー
+     */
+    function showStatus(msg, textColor, bgColor) {
+        const statusDiv = document.getElementById("statusMsg");
+        statusDiv.textContent = msg;
+        statusDiv.style.color = textColor;
+        statusDiv.style.backgroundColor = bgColor;
+        statusDiv.style.borderColor = textColor;
+        statusDiv.style.display = "block";
+    }
+</script>
+
+</body>
+</html>
