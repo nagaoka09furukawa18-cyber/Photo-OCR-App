@@ -283,12 +283,15 @@
     function sendDataToGAS(payload, callback) {
         fetch(GAS_URL, {
             method: "POST",
+            mode: "no-cors", // ★CORS制限によるブロックを防ぐため no-cors にする
+            headers: {
+                "Content-Type": "application/json"
+            },
             body: JSON.stringify(payload)
         })
-        .then(response => response.json())
-        .then(res => {
-            console.log("送信成功:", res);
-            if (callback) callback(res);
+        .then(() => {
+            console.log("送信完了");
+            if (callback) callback({ status: "success" });
         })
         .catch(error => {
             console.error("送信エラー:", error);
