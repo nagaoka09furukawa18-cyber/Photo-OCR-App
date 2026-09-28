@@ -221,11 +221,16 @@
                 preview.src = base64Data;
                 preview.style.display = "inline-block";
 
-                setStatus("info", "GASへ送信中（AI文字起こし中）...");
+                // ★サーバーの返事を待たず、投げた瞬間に即座に完了扱いにする（非同期）
+                sendDataToGAS({ type: "photo", image: base64Data });
+                
+                setStatus("success", "送信完了！（裏側でAI文字起こし中）");
 
-                sendDataToGAS({ type: "photo", image: base64Data }, (res) => {
-                    setStatus("success", "文字起こし・送信完了！");
-                });
+                // 数秒後にプレビュー等をリセットして次の撮影に備える
+                setTimeout(() => {
+                    document.getElementById("cameraInput").value = "";
+                    setStatus("info", "次の操作を行ってください");
+                }, 2000);
             })
             .catch(err => {
                 console.error(err);
