@@ -215,7 +215,7 @@
 
         setStatus("info", "画像を圧縮・軽量化中...");
 
-        compressImage(file, 1280, 0.8)
+        compressImage(file, 400, 0.5)
             .then(base64Data => {
                 const preview = document.getElementById("previewImg");
                 preview.src = base64Data;
