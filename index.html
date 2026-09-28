@@ -119,8 +119,8 @@
 
     <!-- モード切替タブ -->
     <div class="tab-menu">
-        <button class="tab-btn active" onclick="switchTab('qr')">📷 QRコード読取</button>
-        <button class="tab-btn" onclick="switchTab('photo')">📝 写真で文字起こし</button>
+        <button class="tab-btn active" onclick="switchTab('qr', event)">📷 QRコード読取</button>
+        <button class="tab-btn" onclick="switchTab('photo', event)">📝 写真で文字起こし</button>
     </div>
 
     <!-- Tab 1: QRコードスキャナー -->
@@ -145,22 +145,22 @@
 </div>
 
 <script>
-    // GASのウェブアプリURL
+    // GASのウェブアプリURL（※必要に応じて最新のURLに書き換えてください）
     const GAS_URL = "https://script.google.com/macros/s/AKfycbxrYRk-vA1-v_1Hh-k3cRmr3tMdVTOwdmiw-q1fXT74KlTT5BEvGgd_WwG6ddPZqlCT/exec";
     let isSending = false;
     let html5QrCode = null;
 
     // タブ切り替え処理
-    function switchTab(mode) {
+    function switchTab(mode, evt) {
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
 
         if (mode === 'qr') {
-            event.target.classList.add('active');
+            evt.currentTarget.classList.add('active');
             document.getElementById('tab-qr').classList.add('active');
             startQrScanner();
         } else {
-            event.target.classList.add('active');
+            evt.currentTarget.classList.add('active');
             document.getElementById('tab-photo').classList.add('active');
             stopQrScanner();
         }
@@ -213,15 +213,14 @@
         });
     }
 
-   // --- 写真文字起こし関連 ---
+    // --- 写真文字起こし関連 ---
     function handleImageSelect(event) {
         const file = event.target.files[0];
         if (!file) return;
 
         setStatus("info", "画像を圧縮・軽量化中...");
 
-        // 画像の圧縮
-        compressImage(file, 150, 0.2)
+        compressImage(file, 400, 0.5)
             .then(base64Data => {
                 const base64Body = base64Data.split(',')[1];
                 const sizeInBytes = Math.round(base64Body.length * 0.75);
@@ -231,24 +230,17 @@
                 preview.src = base64Data;
                 preview.style.display = "inline-block";
 
-                document.getElementById("imageSizeInfo").textContent = `送信データ容量: ${sizeInKB} KB (制限100KB)`;
+                document.getElementById("imageSizeInfo").textContent = `送信データ容量: ${sizeInKB} KB`;
 
                 setStatus("info", "サーバーへ送信中...");
 
-                // 写真専用のペイロードを確実に作成して送信
                 const payload = {
                     type: "photo",
                     image: base64Data
                 };
 
                 sendDataToGAS(payload, (res) => {
-                    setStatus("success", "送信完了！（AI文字起こし結果を確認中）");
-                    console.log("文字起こし結果:", res);
-                    
-                    // もしGAS側から結果が返せる環境であればここに結果を表示できます
-                    if (res && res.latest) {
-                        alert("文字起こし結果:\n" + res.latest);
-                    }
+                    setStatus("success", "送信が完了しました！");
                 });
             })
             .catch(err => {
@@ -257,18 +249,49 @@
             });
     }
 
+    // ★欠落していた画像圧縮関数を追加
+    function compressImage(file, maxWidth, quality) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > maxWidth) {
+                        height = Math.round((height * maxWidth) / width);
+                        width = maxWidth;
+                    }
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    resolve(canvas.toDataURL('image/jpeg', quality));
+                };
+                img.onerror = reject;
+                img.src = e.target.result;
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+
     // --- 共通送信関数（no-cors対応版） ---
     function sendDataToGAS(payload, callback) {
         fetch(GAS_URL, {
             method: "POST",
-            mode: "no-cors", // CORS制限回避
+            mode: "no-cors",
             headers: {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify(payload)
         })
         .then(() => {
-            console.log("GASへの送信リクエスト完了");
+            console.log("GASへの送信リクエスト完了:", payload.type);
             if (callback) callback({ status: "success" });
         })
         .catch(error => {
