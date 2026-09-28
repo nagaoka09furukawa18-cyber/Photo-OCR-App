@@ -81,7 +81,7 @@
         .file-btn:active { background-color: #219653; }
         input[type="file"] { display: none; }
 
-        /* プレビュー画像 */
+        /* プレビュー画像 & 容量表示 */
         .preview-area {
             margin-top: 15px;
         }
@@ -91,6 +91,12 @@
             border-radius: 4px;
             border: 1px solid #ccc;
             display: none;
+        }
+        #imageSizeInfo {
+            font-size: 0.85rem;
+            color: #666;
+            margin-top: 8px;
+            font-weight: bold;
         }
 
         /* ステータス表示 */
@@ -130,6 +136,7 @@
         </div>
         <div class="preview-area">
             <img id="previewImg" alt="プレビュー画像">
+            <div id="imageSizeInfo"></div>
         </div>
     </div>
 
@@ -181,7 +188,6 @@
             setStatus("info", "QRコードをかざしてください");
         }).catch(err => {
             console.error("カメラ起動エラー:", err);
-            // zoom非対応時のフォールバック
             html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, onScanSuccess);
         });
     }
@@ -198,7 +204,6 @@
 
         setStatus("info", `読み取り成功: ${decodedText} (送信中...)`);
 
-        // POSTでGASへ送信
         sendDataToGAS({ type: "qr", qrText: decodedText }, () => {
             setStatus("success", `送信完了: ${decodedText}`);
             setTimeout(() => {
@@ -215,18 +220,26 @@
 
         setStatus("info", "画像を圧縮・軽量化中...");
 
-        compressImage(file, 200, 0.3)
+        // キャッシュ制限（100KB）を確実にクリアするための極限圧縮（幅150px、画質0.2）
+        compressImage(file, 150, 0.2)
             .then(base64Data => {
+                // Base64の文字数からおおよその容量（KB）を算出
+                const base64Body = base64Data.split(',')[1];
+                const sizeInBytes = Math.round(base64Body.length * 0.75);
+                const sizeInKB = (sizeInBytes / 1024).toFixed(1);
+
                 const preview = document.getElementById("previewImg");
                 preview.src = base64Data;
                 preview.style.display = "inline-block";
 
-                // ★サーバーの返事を待たず、投げた瞬間に即座に完了扱いにする（非同期）
+                // 画面に容量を表示
+                document.getElementById("imageSizeInfo").textContent = `送信データ容量: ${sizeInKB} KB (制限100KB)`;
+
+                // サーバーへ送信
                 sendDataToGAS({ type: "photo", image: base64Data });
                 
                 setStatus("success", "送信完了！（裏側でAI文字起こし中）");
 
-                // 数秒後にプレビュー等をリセットして次の撮影に備える
                 setTimeout(() => {
                     document.getElementById("cameraInput").value = "";
                     setStatus("info", "次の操作を行ってください");
@@ -266,14 +279,11 @@
         });
     }
 
-    // --- 共通送信関数（テキスト形式でのPOST送信） ---
+    // --- 共通送信関数 ---
     function sendDataToGAS(payload, callback) {
-        // GASがリダイレクトを返した際にPOSTがGETに化けるのを防ぐため、
-        // content-typeを text/plain にしてプレーンテキストとして送る定番の回避策
         fetch(GAS_URL, {
             method: "POST",
             body: JSON.stringify(payload)
-            // mode: "no-cors" をあえて外すことで、確実にPOSTとして到達させる
         })
         .then(response => response.json())
         .then(res => {
@@ -282,7 +292,6 @@
         })
         .catch(error => {
             console.error("送信エラー:", error);
-            // CORS等のエラーが出ても、裏側で届いている場合があるので例外処理として扱う
             if (callback) callback();
         });
     }
@@ -293,11 +302,9 @@
         statusEl.innerText = message;
     }
 
-    // 初期起動時はQRスキャナーをON
     window.onload = function() {
         startQrScanner();
     };
-    
 </script>
 
 </body>
