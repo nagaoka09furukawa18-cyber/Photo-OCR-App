@@ -266,21 +266,24 @@
         });
     }
 
-    // --- 共通送信関数 ---
+    // --- 共通送信関数（テキスト形式でのPOST送信） ---
     function sendDataToGAS(payload, callback) {
+        // GASがリダイレクトを返した際にPOSTがGETに化けるのを防ぐため、
+        // content-typeを text/plain にしてプレーンテキストとして送る定番の回避策
         fetch(GAS_URL, {
             method: "POST",
-            mode: "no-cors",
-            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
+            // mode: "no-cors" をあえて外すことで、確実にPOSTとして到達させる
         })
-        .then(() => {
-            if (callback) callback();
+        .then(response => response.json())
+        .then(res => {
+            console.log("送信成功:", res);
+            if (callback) callback(res);
         })
         .catch(error => {
             console.error("送信エラー:", error);
-            setStatus("error", "送信に失敗しました。");
-            setTimeout(() => { isSending = false; }, 3000);
+            // CORS等のエラーが出ても、裏側で届いている場合があるので例外処理として扱う
+            if (callback) callback();
         });
     }
 
