@@ -145,7 +145,7 @@
 </div>
 
 <script>
-    // GASのウェブアプリURL（※必要に応じて最新のURLに書き換えてください）
+    // GASのウェブアプリURL
     const GAS_URL = "https://script.google.com/macros/s/AKfycbxrYRk-vA1-v_1Hh-k3cRmr3tMdVTOwdmiw-q1fXT74KlTT5BEvGgd_WwG6ddPZqlCT/exec";
     let isSending = false;
     let html5QrCode = null;
@@ -220,6 +220,7 @@
 
         setStatus("info", "画像を圧縮・軽量化中...");
 
+        // FileReaderを使わず、高速かつ安全な方式で画像を処理
         compressImage(file, 400, 0.5)
             .then(base64Data => {
                 const base64Body = base64Data.split(',')[1];
@@ -249,34 +250,37 @@
             });
     }
 
-    // ★欠落していた画像圧縮関数を追加
+    // URL.createObjectURLを使用したメモリに優しい圧縮関数
     function compressImage(file, maxWidth, quality) {
         return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const img = new Image();
-                img.onload = function() {
-                    let width = img.width;
-                    let height = img.height;
+            const objectUrl = URL.createObjectURL(file);
+            const img = new Image();
 
-                    if (width > maxWidth) {
-                        height = Math.round((height * maxWidth) / width);
-                        width = maxWidth;
-                    }
+            img.onload = function() {
+                URL.revokeObjectURL(objectUrl); // メモリ解放
+                let width = img.width;
+                let height = img.height;
 
-                    const canvas = document.createElement('canvas');
-                    canvas.width = width;
-                    canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, width, height);
+                if (width > maxWidth) {
+                    height = Math.round((height * maxWidth) / width);
+                    width = maxWidth;
+                }
 
-                    resolve(canvas.toDataURL('image/jpeg', quality));
-                };
-                img.onerror = reject;
-                img.src = e.target.result;
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                resolve(canvas.toDataURL('image/jpeg', quality));
             };
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
+
+            img.onerror = function(err) {
+                URL.revokeObjectURL(objectUrl);
+                reject(err);
+            };
+
+            img.src = objectUrl;
         });
     }
 
