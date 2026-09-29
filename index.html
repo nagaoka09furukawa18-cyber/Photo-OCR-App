@@ -59,6 +59,15 @@
             display: block;
         }
 
+        /* カメラ（見るだけ）プレビュー領域用スタイル */
+        #liveVideo {
+            width: 100%;
+            max-height: 300px;
+            object-fit: cover;
+            border-radius: 8px;
+            background: #000;
+        }
+
         /* QRリーダーエリア */
         #reader {
             width: 100%;
@@ -186,18 +195,23 @@
 <div class="container">
     <h2>製造現場用 スキャナー</h2>
 
-    <!-- モード切替タブ -->
+    <!-- モード切替タブ（起動時はどちらも非アクティブ） -->
     <div class="tab-menu">
-        <button class="tab-btn active" onclick="switchTab('qr', event)">📷 QRコード読取</button>
+        <button class="tab-btn" onclick="switchTab('qr', event)">📷 QRコード読取</button>
         <button class="tab-btn" onclick="switchTab('photo', event)">📝 写真でOCR</button>
     </div>
 
-    <!-- Tab 1: QRコードスキャナー -->
-    <div id="tab-qr" class="tab-content active">
+    <!-- 起動時表示：カメラの映像を見るだけ（読取なし） -->
+    <div id="tab-live" class="tab-content active">
+        <video id="liveVideo" autoplay playsinline muted></video>
+    </div>
+
+    <!-- Tab 1: QRコードスキャナー（選択時に表示・稼働） -->
+    <div id="tab-qr" class="tab-content">
         <div id="reader"></div>
     </div>
 
-    <!-- Tab 2: 写真AI OCR -->
+    <!-- Tab 2: 写真AI OCR（選択時に表示） -->
     <div id="tab-photo" class="tab-content">
         <div class="form-group">
             <label for="cameraInput" class="file-btn">📸 写真を撮影してOCR</label>
@@ -210,7 +224,7 @@
     </div>
 
     <!-- 共通ステータス -->
-    <div id="status" class="info">カメラを準備中...</div>
+    <div id="status" class="info">モード（QR/OCR）を選択してください</div>
 </div>
 
 <!-- 撮影後プレビュー・トリミング選択モーダル -->
@@ -242,6 +256,7 @@
     const GAS_URL = "https://script.google.com/macros/s/AKfycbxq093UJSL4Er2GMGFmGnPZtha0wdgqaWL1omKz7BcjkWQDBBXbc51Ltukf-_X09z7Q/exec";
     let isSending = false;
     let html5QrCode = null;
+    let liveStream = null;
     
     let rawImageBase64 = "";
     let cropperInstance = null;
@@ -251,15 +266,53 @@
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
 
+        // ライブカメラ（見るだけ）を停止
+        stopLiveCamera();
+        // QRリーダーを停止
+        stopQrScanner();
+
         if (mode === 'qr') {
             evt.currentTarget.classList.add('active');
             document.getElementById('tab-qr').classList.add('active');
             startQrScanner();
-        } else {
+        } else if (mode === 'photo') {
             evt.currentTarget.classList.add('active');
             document.getElementById('tab-photo').classList.add('active');
-            stopQrScanner();
             setStatus("info", "写真を撮影してOCRを行ってください");
+        }
+    }
+
+    // --- 起動時：カメラ映像を見るだけ（読取なし） ---
+    function startLiveCamera() {
+        const videoElement = document.getElementById('liveVideo');
+        navigator.mediaDevices.getUserMedia({ 
+            video: { 
+                facingMode: "environment",
+                advanced: [{ zoom: 2.0 }]
+            } 
+        })
+        .then(stream => {
+            liveStream = stream;
+            videoElement.srcObject = stream;
+        })
+        .catch(err => {
+            console.log("通常カメラ起動フォールバック:", err);
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+                .then(stream => {
+                    liveStream = stream;
+                    videoElement.srcObject = stream;
+                })
+                .catch(e => {
+                    console.error("カメラ取得エラー:", e);
+                    setStatus("error", "カメラの起動に失敗しました");
+                });
+        });
+    }
+
+    function stopLiveCamera() {
+        if (liveStream) {
+            liveStream.getTracks().forEach(track => track.stop());
+            liveStream = null;
         }
     }
 
@@ -269,7 +322,6 @@
             html5QrCode = new Html5Qrcode("reader");
         }
         
-        // 既にスキャン中の場合は二重起動防止
         if (html5QrCode.isScanning) return;
 
         const config = {
@@ -332,11 +384,9 @@
         reader.onload = function(event) {
             rawImageBase64 = event.target.result;
 
-            // モーダル内の画像にセット
             const imgEl = document.getElementById('targetImage');
             imgEl.src = rawImageBase64;
 
-            // モーダルを表示して通常選択ボタンを表示、トリミング確定ボタンを隠す
             document.getElementById('actionModal').style.display = 'block';
             document.getElementById('choiceButtons').style.display = 'flex';
             document.getElementById('cropConfirmButtons').style.display = 'none';
@@ -345,13 +395,11 @@
         reader.readAsDataURL(file);
     });
 
-    // パターン1：そのまま送信
     function sendAsIs() {
         closeModal();
         processAndSendImage(rawImageBase64);
     }
 
-    // パターン2：トリミング（切り抜き）モード開始
     function startCropMode() {
         document.getElementById('choiceButtons').style.display = 'none';
         document.getElementById('cropConfirmButtons').style.display = 'flex';
@@ -362,16 +410,14 @@
         }
 
         cropperInstance = new Cropper(imgEl, {
-            aspectRatio: NaN, // 自由な比率
+            aspectRatio: NaN,
             viewMode: 1,
         });
     }
 
-    // トリミング範囲確定して送信
     function confirmCropAndSend() {
         if (!cropperInstance) return;
 
-        // 切り抜いた画像をCanvasとして取得（最大幅1024pxに制限して軽量化）
         const canvas = cropperInstance.getCroppedCanvas({
             maxWidth: 1024,
             maxHeight: 1024,
@@ -382,7 +428,6 @@
         processAndSendImage(croppedBase64);
     }
 
-    // トリミングをキャンセルして元の選択画面に戻る
     function cancelCrop() {
         if (cropperInstance) {
             cropperInstance.destroy();
@@ -395,14 +440,12 @@
         document.getElementById('cropConfirmButtons').style.display = 'none';
     }
 
-    // パターン3：再撮影
     function retakePhoto() {
         closeModal();
         document.getElementById('cameraInput').value = '';
         document.getElementById('cameraInput').click();
     }
 
-    // モーダルを閉じる共通処理
     function closeModal() {
         document.getElementById('actionModal').style.display = 'none';
         if (cropperInstance) {
@@ -412,7 +455,6 @@
         document.getElementById('cameraInput').value = '';
     }
 
-    // 画像データの容量計算＆GASへ送信
     function processAndSendImage(base64Data) {
         setStatus("info", "画像を処理・サーバーへ送信中...");
 
@@ -420,7 +462,6 @@
         const sizeInBytes = Math.round(base64Body.length * 0.75);
         const sizeInKB = (sizeInBytes / 1024).toFixed(1);
 
-        // 画面下のプレビュー表示も更新
         const preview = document.getElementById("previewImg");
         preview.src = base64Data;
         preview.style.display = "inline-block";
@@ -436,7 +477,6 @@
         });
     }
 
-    // --- 共通送信関数（no-cors対応版） ---
     function sendDataToGAS(payload, callback) {
         fetch(GAS_URL, {
             method: "POST",
@@ -463,9 +503,10 @@
         statusEl.innerText = message;
     }
 
-    // 起動時は「QRコード読取」タブがアクティブになり、カメラ映像（ビューアー）のみがスタンバイ状態になる
+    // 起動時はモード未選択・カメラ映像（見るだけ）を表示し、案山メッセージを出す
     window.onload = function() {
-        startQrScanner();
+        startLiveCamera();
+        setStatus("info", "モード（QR/OCR）を選択してください");
     };
 </script>
 
