@@ -214,8 +214,9 @@
     <!-- Tab 2: 写真AI OCR -->
     <div id="tab-photo" class="tab-content">
         <div class="form-group">
+            <!-- capture="environment" を削除し、OS標準のネイティブカメラ確認画面をバイパス -->
             <label for="cameraInput" class="file-btn">📸 写真を撮影してOCR</label>
-            <input type="file" id="cameraInput" accept="image/*" capture="environment">
+            <input type="file" id="cameraInput" accept="image/*">
         </div>
         <div class="preview-area">
             <img id="previewImg" alt="プレビュー画像">
@@ -373,7 +374,6 @@
         const reader = new FileReader();
 
         reader.onload = function(event) {
-            // 最大幅1200pxを維持しつつ、確実に100KB以内に収まるよう自動調整
             compressImageToTargetSize(event.target.result, 1200, 100 * 1024, function(compressedBase64, sizeKB) {
                 rawImageBase64 = compressedBase64;
 
@@ -409,19 +409,16 @@
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, width, height);
 
-            // まず高めの画質(0.85)で試す
             let quality = 0.85;
             let compressedBase64 = canvas.toDataURL('image/jpeg', quality);
             let sizeBytes = Math.round((compressedBase64.split(',')[1].length) * 0.75);
 
-            // まだ100KBを超える場合は、画質を下げてループで調整
             while (sizeBytes > maxBytes && quality > 0.1) {
                 quality -= 0.15;
                 compressedBase64 = canvas.toDataURL('image/jpeg', quality);
                 sizeBytes = Math.round((compressedBase64.split(',')[1].length) * 0.75);
             }
 
-            // それでも超える場合はピクセル数（解像度）自体を少し落として確実に100KB以下にする
             if (sizeBytes > maxBytes) {
                 let reducedWidth = Math.round(width * 0.8);
                 let reducedHeight = Math.round(height * 0.8);
@@ -469,7 +466,6 @@
             maxHeight: 1200,
         });
         
-        // トリミング後も同様に100KB以下に収める
         let quality = 0.85;
         let croppedBase64 = canvas.toDataURL('image/jpeg', quality);
         let sizeBytes = Math.round((croppedBase64.split(',')[1].length) * 0.75);
