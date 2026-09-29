@@ -3,9 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>製造現場用 QR & AI文字起こしスキャナー</title>
+    <title>製造現場用 QR & AI OCRスキャナー</title>
     <!-- QRコードリーダー用ライブラリ -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+    <!-- トリミング用 (Cropper.js) のスタイルシートとライブラリ -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -110,6 +114,71 @@
         .success { color: #28a745; background: #eef9f2; border: 1px solid #d4edda; }
         .error { color: #dc3545; background: #fdf2f2; border: 1px solid #f5c6cb; }
         .info { color: #007bff; background: #eef4f9; border: 1px solid #bee5eb; }
+
+        /* トリミング・選択モーダル用スタイル */
+        #actionModal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.85);
+            z-index: 9999;
+            box-sizing: border-box;
+            padding: 15px;
+            overflow-y: auto;
+        }
+        .modal-content {
+            max-width: 100%;
+            margin: 20px auto;
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+        }
+        .modal-content h3 {
+            margin-top: 0;
+            font-size: 1.1rem;
+            color: #333;
+        }
+        #previewContainer {
+            width: 100%;
+            max-height: 50vh;
+            overflow: hidden;
+            margin-bottom: 15px;
+            background: #eee;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+        }
+        #targetImage {
+            max-width: 100%;
+            max-height: 50vh;
+            display: block;
+        }
+        .modal-buttons {
+            display: flex;
+            gap: 8px;
+            justify-content: space-between;
+        }
+        .modal-buttons button {
+            flex: 1;
+            padding: 12px 5px;
+            border: none;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 0.95rem;
+            color: #fff;
+            cursor: pointer;
+        }
+        .btn-send { background: #27ae60; }
+        .btn-crop { background: #3498db; }
+        .btn-retake { background: #e74c3c; }
+        .btn-back { background: #95a5a6; }
     </style>
 </head>
 <body>
@@ -120,7 +189,7 @@
     <!-- モード切替タブ -->
     <div class="tab-menu">
         <button class="tab-btn active" onclick="switchTab('qr', event)">📷 QRコード読取</button>
-        <button class="tab-btn" onclick="switchTab('photo', event)">📝 写真で文字起こし</button>
+        <button class="tab-btn" onclick="switchTab('photo', event)">📝 写真でOCR</button>
     </div>
 
     <!-- Tab 1: QRコードスキャナー -->
@@ -128,11 +197,11 @@
         <div id="reader"></div>
     </div>
 
-    <!-- Tab 2: 写真AI文字起こし -->
+    <!-- Tab 2: 写真AI OCR -->
     <div id="tab-photo" class="tab-content">
         <div class="form-group">
-            <label for="cameraInput" class="file-btn">📸 写真を撮影して文字起こし</label>
-            <input type="file" id="cameraInput" accept="image/*" capture="environment" onchange="handleImageSelect(event)">
+            <label for="cameraInput" class="file-btn">📸 写真を撮影してOCR</label>
+            <input type="file" id="cameraInput" accept="image/*" capture="environment">
         </div>
         <div class="preview-area">
             <img id="previewImg" alt="プレビュー画像">
@@ -144,13 +213,39 @@
     <div id="status" class="info">カメラを準備中...</div>
 </div>
 
+<!-- 撮影後プレビュー・トリミング選択モーダル -->
+<div id="actionModal">
+    <div class="modal-content">
+        <h3>撮影画像の処理方法を選択してください</h3>
+        
+        <div id="previewContainer">
+            <img id="targetImage" alt="撮影画像">
+        </div>
+
+        <!-- 3パターンの選択ボタン -->
+        <div id="choiceButtons" class="modal-buttons">
+            <button class="btn-send" onclick="sendAsIs()">そのまま送信</button>
+            <button class="btn-crop" onclick="startCropMode()">トリミング</button>
+            <button class="btn-retake" onclick="retakePhoto()">再撮影</button>
+        </div>
+
+        <!-- トリミング中の確定・戻るボタン（初期は非表示） -->
+        <div id="cropConfirmButtons" class="modal-buttons" style="display: none;">
+            <button class="btn-send" onclick="confirmCropAndSend()">この範囲で送信</button>
+            <button class="btn-back" onclick="cancelCrop()">戻る</button>
+        </div>
+    </div>
+</div>
+
 <script>
     // GASのウェブアプリURL
     const GAS_URL = "https://script.google.com/macros/s/AKfycbxq093UJSL4Er2GMGFmGnPZtha0wdgqaWL1omKz7BcjkWQDBBXbc51Ltukf-_X09z7Q/exec";
     let isSending = false;
     let html5QrCode = null;
-
     
+    let rawImageBase64 = "";
+    let cropperInstance = null;
+
     // タブ切り替え処理
     function switchTab(mode, evt) {
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -214,74 +309,118 @@
         });
     }
 
-    // --- 写真文字起こし関連 ---
-    function handleImageSelect(event) {
-        const file = event.target.files[0];
-        if (!file) return;
+    // --- 写真撮影・OCR関連 ---
+    document.getElementById('cameraInput').addEventListener('change', function(e) {
+        const files = e.target.files;
+        if (!files || files.length === 0) return;
 
-        setStatus("info", "画像を圧縮・軽量化中...");
+        const file = files[0];
+        const reader = new FileReader();
 
-        // FileReaderを使わず、高速かつ安全な方式で画像を処理
-        compressImage(file, 400, 0.5)
-            .then(base64Data => {
-                const base64Body = base64Data.split(',')[1];
-                const sizeInBytes = Math.round(base64Body.length * 0.75);
-                const sizeInKB = (sizeInBytes / 1024).toFixed(1);
+        reader.onload = function(event) {
+            rawImageBase64 = event.target.result;
 
-                const preview = document.getElementById("previewImg");
-                preview.src = base64Data;
-                preview.style.display = "inline-block";
+            // モーダル内の画像にセット
+            const imgEl = document.getElementById('targetImage');
+            imgEl.src = rawImageBase64;
 
-                document.getElementById("imageSizeInfo").textContent = `送信データ容量: ${sizeInKB} KB`;
+            // モーダルを表示して通常選択ボタンを表示、トリミング確定ボタンを隠す
+            document.getElementById('actionModal').style.display = 'block';
+            document.getElementById('choiceButtons').style.display = 'flex';
+            document.getElementById('cropConfirmButtons').style.display = 'none';
+        };
 
-                setStatus("info", "サーバーへ送信中...");
+        reader.readAsDataURL(file);
+    });
 
-                const payload = {
-                    type: "photo",
-                    image: base64Data
-                };
-
-                sendDataToGAS(payload, (res) => {
-                    setStatus("success", "送信が完了しました！");
-                });
-            })
-            .catch(err => {
-                console.error(err);
-                setStatus("error", "エラー: 画像の処理に失敗しました");
-            });
+    // パターン1：そのまま送信
+    function sendAsIs() {
+        closeModal();
+        processAndSendImage(rawImageBase64);
     }
 
-    // URL.createObjectURLを使用したメモリに優しい圧縮関数
-    function compressImage(file, maxWidth, quality) {
-        return new Promise((resolve, reject) => {
-            const objectUrl = URL.createObjectURL(file);
-            const img = new Image();
+    // パターン2：トリミング（切り抜き）モード開始
+    function startCropMode() {
+        document.getElementById('choiceButtons').style.display = 'none';
+        document.getElementById('cropConfirmButtons').style.display = 'flex';
 
-            img.onload = function() {
-                URL.revokeObjectURL(objectUrl); // メモリ解放
-                let width = img.width;
-                let height = img.height;
+        const imgEl = document.getElementById('targetImage');
+        if (cropperInstance) {
+            cropperInstance.destroy();
+        }
 
-                if (width > maxWidth) {
-                    height = Math.round((height * maxWidth) / width);
-                    width = maxWidth;
-                }
+        cropperInstance = new Cropper(imgEl, {
+            aspectRatio: NaN, // 自由な比率
+            viewMode: 1,
+        });
+    }
 
-                const canvas = document.createElement('canvas');
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
+    // トリミング範囲確定して送信
+    function confirmCropAndSend() {
+        if (!cropperInstance) return;
 
-                resolve(canvas.toDataURL('image/jpeg', quality));
-            };
+        // 切り抜いた画像をCanvasとして取得（最大幅1024pxに制限して軽量化）
+        const canvas = cropperInstance.getCroppedCanvas({
+            maxWidth: 1024,
+            maxHeight: 1024,
+        });
+        const croppedBase64 = canvas.toDataURL('image/jpeg', 0.85);
 
-            img.onerror = function(err) {
-                URL.revokeObjectURL(objectUrl);
-                reject(err);
-            };
+        closeModal();
+        processAndSendImage(croppedBase64);
+    }
 
-            img.src = objectUrl;
+    // トリミングをキャンセルして元の選択画面に戻る
+    function cancelCrop() {
+        if (cropperInstance) {
+            cropperInstance.destroy();
+            cropperInstance = null;
+        }
+        const imgEl = document.getElementById('targetImage');
+        imgEl.src = rawImageBase64;
+
+        document.getElementById('choiceButtons').style.display = 'flex';
+        document.getElementById('cropConfirmButtons').style.display = 'none';
+    }
+
+    // パターン3：再撮影
+    function retakePhoto() {
+        closeModal();
+        document.getElementById('cameraInput').value = '';
+        document.getElementById('cameraInput').click();
+    }
+
+    // モーダルを閉じる共通処理
+    function closeModal() {
+        document.getElementById('actionModal').style.display = 'none';
+        if (cropperInstance) {
+            cropperInstance.destroy();
+            cropperInstance = null;
+        }
+        document.getElementById('cameraInput').value = '';
+    }
+
+    // 画像データの容量計算＆GASへ送信
+    function processAndSendImage(base64Data) {
+        setStatus("info", "画像を処理・サーバーへ送信中...");
+
+        const base64Body = base64Data.split(',')[1];
+        const sizeInBytes = Math.round(base64Body.length * 0.75);
+        const sizeInKB = (sizeInBytes / 1024).toFixed(1);
+
+        // 画面下のプレビュー表示も更新
+        const preview = document.getElementById("previewImg");
+        preview.src = base64Data;
+        preview.style.display = "inline-block";
+        document.getElementById("imageSizeInfo").textContent = `送信データ容量: ${sizeInKB} KB`;
+
+        const payload = {
+            type: "photo",
+            image: base64Data
+        };
+
+        sendDataToGAS(payload, (res) => {
+            setStatus("success", "OCR送信が完了しました！");
         });
     }
 
@@ -301,6 +440,7 @@
         })
         .catch(error => {
             console.error("送信エラー:", error);
+            setStatus("error", "エラー: サーバー通信に失敗しました");
             if (callback) callback();
         });
     }
