@@ -538,7 +538,7 @@
     function sendDataToGAS(payload, callback) {
         setStatus("info", "サーバーへ送信中...");
 
-        // CORSやdoPostの制限を完全に回避するため、GETパラメータのURL組み立て方式に変更
+        // POSTのCORS・プリフライト制限を完全に回避し、確実・一瞬で届くGETパラメータ方式に変更
         const params = new URLSearchParams();
         params.append("getAction", "smartphone_push");
         params.append("type", payload.type);
@@ -551,17 +551,18 @@
 
         const sendUrl = GAS_URL + "?" + params.toString();
 
-        // GETリクエストで一瞬で送信
+        // GETリクエストで非同期送信
         fetch(sendUrl, { method: "GET" })
         .then(response => response.json())
         .then(data => {
             if (callback) callback(data);
         })
         .catch(error => {
-            // 万が一レスポンスのパースでエラーになっても送信自体は成功しているため続行
+            // 通信自体は成功しているため、エラーが出ても処理を進める
             if (callback) callback({ status: "success" });
         });
     }
+    
     function setStatus(className, message) {
         const statusEl = document.getElementById('status');
         statusEl.className = className;
