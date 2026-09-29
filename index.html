@@ -536,16 +536,18 @@
     }
 
     function sendDataToGAS(payload, callback) {
+        // mode: "no-cors" を外すとボディが消えてしまうため、
+        // CORS制限を回避しつつ確実にJSONを届ける定番の "text/plain" 形式でPOST送信します
         fetch(GAS_URL, {
             method: "POST",
-            mode: "no-cors",
             headers: {
-                "Content-Type": "application/json"
+                "Content-Type": "text/plain;charset=utf-8"
             },
             body: JSON.stringify(payload)
         })
-        .then(() => {
-            if (callback) callback({ status: "success" });
+        .then(response => response.json())
+        .then(data => {
+            if (callback) callback(data);
         })
         .catch(error => {
             setStatus("error", "エラー: サーバー通信に失敗しました");
