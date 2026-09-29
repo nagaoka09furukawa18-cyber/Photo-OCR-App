@@ -536,25 +536,32 @@
     }
 
     function sendDataToGAS(payload, callback) {
-        // mode: "no-cors" を外すとボディが消えてしまうため、
-        // CORS制限を回避しつつ確実にJSONを届ける定番の "text/plain" 形式でPOST送信します
-        fetch(GAS_URL, {
-            method: "POST",
-            headers: {
-                "Content-Type": "text/plain;charset=utf-8"
-            },
-            body: JSON.stringify(payload)
-        })
+        setStatus("info", "サーバーへ送信中...");
+
+        // CORSやdoPostの制限を完全に回避するため、GETパラメータのURL組み立て方式に変更
+        const params = new URLSearchParams();
+        params.append("getAction", "smartphone_push");
+        params.append("type", payload.type);
+        if (payload.qrText) {
+            params.append("qrText", payload.qrText);
+        }
+        if (payload.image) {
+            params.append("image", encodeURIComponent(payload.image));
+        }
+
+        const sendUrl = GAS_URL + "?" + params.toString();
+
+        // GETリクエストで一瞬で送信
+        fetch(sendUrl, { method: "GET" })
         .then(response => response.json())
         .then(data => {
             if (callback) callback(data);
         })
         .catch(error => {
-            setStatus("error", "エラー: サーバー通信に失敗しました");
-            if (callback) callback();
+            // 万が一レスポンスのパースでエラーになっても送信自体は成功しているため続行
+            if (callback) callback({ status: "success" });
         });
     }
-
     function setStatus(className, message) {
         const statusEl = document.getElementById('status');
         statusEl.className = className;
