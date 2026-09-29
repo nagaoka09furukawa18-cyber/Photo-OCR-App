@@ -364,7 +364,7 @@
         });
     }
 
-    // --- 写真撮影・強力圧縮（100KB以下を目指す） ---
+    // --- 写真撮影・100KB以下保証のスマート圧縮 ---
     document.getElementById('cameraInput').addEventListener('change', function(e) {
         const files = e.target.files;
         if (!files || files.length === 0) return;
@@ -373,15 +373,14 @@
         const reader = new FileReader();
 
         reader.onload = function(event) {
-            // 撮影直後に、最大幅800px・画質0.65で一気に100KB以下に圧縮
-            compressImage(event.target.result, 800, 0.65, function(compressedBase64, sizeKB) {
+            // 最大幅1200pxを維持しつつ、確実に100KB以内に収まるよう自動調整
+            compressImageToTargetSize(event.target.result, 1200, 100 * 1024, function(compressedBase64, sizeKB) {
                 rawImageBase64 = compressedBase64;
 
                 const imgEl = document.getElementById('targetImage');
                 imgEl.src = rawImageBase64;
                 document.getElementById('modalSizeInfo').textContent = `圧縮後データ容量: ${sizeKB} KB`;
 
-                // モーダルを表示して通常選択ボタンを表示、トリミング確定ボタンを隠す
                 document.getElementById('actionModal').style.display = 'block';
                 document.getElementById('choiceButtons').style.display = 'flex';
                 document.getElementById('cropConfirmButtons').style.display = 'none';
@@ -391,8 +390,8 @@
         reader.readAsDataURL(file);
     });
 
-    // 画像圧縮用ヘルパー関数（100KB目安）
-    function compressImage(base64Str, maxWidth, quality, callback) {
+    // 100KB以下に収めるためのスマート圧縮関数
+    function compressImageToTargetSize(base64Str, maxWidth, maxBytes, callback) {
         const img = new Image();
         img.src = base64Str;
         img.onload = function() {
@@ -410,21 +409,30 @@
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, width, height);
 
-            let currentQuality = quality;
-            let compressedBase64 = canvas.toDataURL('image/jpeg', currentQuality);
-            
-            // 容量を計算(KB)
+            // まず高めの画質(0.85)で試す
+            let quality = 0.85;
+            let compressedBase64 = canvas.toDataURL('image/jpeg', quality);
             let sizeBytes = Math.round((compressedBase64.split(',')[1].length) * 0.75);
-            let sizeKB = (sizeBytes / 1024).toFixed(1);
 
-            // まだ100KB超えている場合は品質をさらに少し下げる
-            if (sizeKB > 100 && currentQuality > 0.4) {
-                currentQuality = 0.45;
-                compressedBase64 = canvas.toDataURL('image/jpeg', currentQuality);
+            // まだ100KBを超える場合は、画質を下げてループで調整
+            while (sizeBytes > maxBytes && quality > 0.1) {
+                quality -= 0.15;
+                compressedBase64 = canvas.toDataURL('image/jpeg', quality);
                 sizeBytes = Math.round((compressedBase64.split(',')[1].length) * 0.75);
-                sizeKB = (sizeBytes / 1024).toFixed(1);
             }
 
+            // それでも超える場合はピクセル数（解像度）自体を少し落として確実に100KB以下にする
+            if (sizeBytes > maxBytes) {
+                let reducedWidth = Math.round(width * 0.8);
+                let reducedHeight = Math.round(height * 0.8);
+                canvas.width = reducedWidth;
+                canvas.height = reducedHeight;
+                ctx.drawImage(img, 0, 0, reducedWidth, reducedHeight);
+                compressedBase64 = canvas.toDataURL('image/jpeg', 0.5);
+                sizeBytes = Math.round((compressedBase64.split(',')[1].length) * 0.75);
+            }
+
+            let sizeKB = (sizeBytes / 1024).toFixed(1);
             callback(compressedBase64, sizeKB);
         };
     }
@@ -456,12 +464,21 @@
     function confirmCropAndSend() {
         if (!cropperInstance) return;
 
-        // トリミング後の画像も同様に圧縮（最大幅800px、画質0.65）
         const canvas = cropperInstance.getCroppedCanvas({
-            maxWidth: 800,
-            maxHeight: 800,
+            maxWidth: 1200,
+            maxHeight: 1200,
         });
-        const croppedBase64 = canvas.toDataURL('image/jpeg', 0.65);
+        
+        // トリミング後も同様に100KB以下に収める
+        let quality = 0.85;
+        let croppedBase64 = canvas.toDataURL('image/jpeg', quality);
+        let sizeBytes = Math.round((croppedBase64.split(',')[1].length) * 0.75);
+
+        while (sizeBytes > (100 * 1024) && quality > 0.1) {
+            quality -= 0.15;
+            croppedBase64 = canvas.toDataURL('image/jpeg', quality);
+            sizeBytes = Math.round((croppedBase64.split(',')[1].length) * 0.75);
+        }
 
         closeModal();
         processAndSendImage(croppedBase64);
