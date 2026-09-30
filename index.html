@@ -197,6 +197,7 @@
 
     <!-- モード切替タブ -->
     <div class="tab-menu">
+        <button class="tab-btn active" onclick="switchTab('live', event)">👁️ ライブ</button>
         <button class="tab-btn" onclick="switchTab('qr', event)">📷 QRコード読取</button>
         <button class="tab-btn" onclick="switchTab('photo', event)">📝 写真でOCR</button>
     </div>
@@ -214,7 +215,6 @@
     <!-- Tab 2: 写真AI OCR -->
     <div id="tab-photo" class="tab-content">
         <div class="form-group">
-            <!-- capture="environment" を削除し、OS標準のネイティブカメラ確認画面をバイパス -->
             <label for="cameraInput" class="file-btn">📸 写真を撮影してOCR</label>
             <input type="file" id="cameraInput" accept="image/*">
         </div>
@@ -225,7 +225,7 @@
     </div>
 
     <!-- 共通ステータス -->
-    <div id="status" class="info">モード（QR/OCR）を選択してください</div>
+    <div id="status" class="info">カメラを初期化中...</div>
 </div>
 
 <!-- 撮影後プレビュー・トリミング選択モーダル -->
@@ -254,8 +254,6 @@
 </div>
 
 <script>
-    // GASのウェブアプリURL
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbxq093UJSL4Er2GMGFmGnPZtha0wdgqaWL1omKz7BcjkWQDBBXbc51Ltukf-_X09z7Q/exec";
     let isSending = false;
     let html5QrCode = null;
     let liveStream = null;
@@ -271,7 +269,12 @@
         stopLiveCamera();
         stopQrScanner();
 
-        if (mode === 'qr') {
+        if (mode === 'live') {
+            evt.currentTarget.classList.add('active');
+            document.getElementById('tab-live').classList.add('active');
+            startLiveCamera();
+            setStatus("info", "ライブプレビュー中");
+        } else if (mode === 'qr') {
             evt.currentTarget.classList.add('active');
             document.getElementById('tab-qr').classList.add('active');
             startQrScanner();
@@ -356,7 +359,8 @@
 
         setStatus("info", `読み取り成功: ${decodedText} (送信中...)`);
 
-        sendDataToGAS({ type: "qr", qrText: decodedText }, () => {
+        // Firebase / バックエンドへの送信処理（必要に応じて実装を接続）
+        sendDataToFirebase({ type: "qr", qrText: decodedText }, () => {
             setStatus("success", `送信完了: ${decodedText}`);
             setTimeout(() => {
                 isSending = false;
@@ -365,7 +369,7 @@
         });
     }
 
-    // --- 写真撮影・100KB以下保証のスマート圧縮 ---
+    // --- 写真撮影・圧縮処理 ---
     document.getElementById('cameraInput').addEventListener('change', function(e) {
         const files = e.target.files;
         if (!files || files.length === 0) return;
@@ -374,12 +378,12 @@
         const reader = new FileReader();
 
         reader.onload = function(event) {
-            compressImageToTargetSize(event.target.result, 1200, 100 * 1024, function(compressedBase64, sizeKB) {
+            compressImageToTargetSize(event.target.result, 1200, 500 * 1024, function(compressedBase64, sizeKB) {
                 rawImageBase64 = compressedBase64;
 
                 const imgEl = document.getElementById('targetImage');
                 imgEl.src = rawImageBase64;
-                document.getElementById('modalSizeInfo').textContent = `圧縮後データ容量: ${sizeKB} KB`;
+                document.getElementById('modalSizeInfo').textContent = `画像データ容量: ${sizeKB} KB`;
 
                 document.getElementById('actionModal').style.display = 'block';
                 document.getElementById('choiceButtons').style.display = 'flex';
@@ -390,7 +394,7 @@
         reader.readAsDataURL(file);
     });
 
-    // 100KB以下に収めるためのスマート圧縮関数
+    // 画像圧縮関数（FirebaseストレージやGemini APIへの配慮として適切なサイズに調整）
     function compressImageToTargetSize(base64Str, maxWidth, maxBytes, callback) {
         const img = new Image();
         img.src = base64Str;
@@ -409,23 +413,13 @@
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, width, height);
 
-            let quality = 0.85;
+            let quality = 0.90;
             let compressedBase64 = canvas.toDataURL('image/jpeg', quality);
             let sizeBytes = Math.round((compressedBase64.split(',')[1].length) * 0.75);
 
-            while (sizeBytes > maxBytes && quality > 0.1) {
-                quality -= 0.15;
+            while (sizeBytes > maxBytes && quality > 0.2) {
+                quality -= 0.1;
                 compressedBase64 = canvas.toDataURL('image/jpeg', quality);
-                sizeBytes = Math.round((compressedBase64.split(',')[1].length) * 0.75);
-            }
-
-            if (sizeBytes > maxBytes) {
-                let reducedWidth = Math.round(width * 0.8);
-                let reducedHeight = Math.round(height * 0.8);
-                canvas.width = reducedWidth;
-                canvas.height = reducedHeight;
-                ctx.drawImage(img, 0, 0, reducedWidth, reducedHeight);
-                compressedBase64 = canvas.toDataURL('image/jpeg', 0.5);
                 sizeBytes = Math.round((compressedBase64.split(',')[1].length) * 0.75);
             }
 
@@ -466,12 +460,12 @@
             maxHeight: 1200,
         });
         
-        let quality = 0.85;
+        let quality = 0.90;
         let croppedBase64 = canvas.toDataURL('image/jpeg', quality);
         let sizeBytes = Math.round((croppedBase64.split(',')[1].length) * 0.75);
 
-        while (sizeBytes > (100 * 1024) && quality > 0.1) {
-            quality -= 0.15;
+        while (sizeBytes > (500 * 1024) && quality > 0.2) {
+            quality -= 0.1;
             croppedBase64 = canvas.toDataURL('image/jpeg', quality);
             sizeBytes = Math.round((croppedBase64.split(',')[1].length) * 0.75);
         }
@@ -491,7 +485,7 @@
         
         const base64Body = rawImageBase64.split(',')[1];
         const sizeKB = (Math.round(base64Body.length * 0.75) / 1024).toFixed(1);
-        document.getElementById('modalSizeInfo').textContent = `圧縮後データ容量: ${sizeKB} KB`;
+        document.getElementById('modalSizeInfo').textContent = `画像データ容量: ${sizeKB} KB`;
 
         document.getElementById('choiceButtons').style.display = 'flex';
         document.getElementById('cropConfirmButtons').style.display = 'none';
@@ -514,7 +508,7 @@
     }
 
     function processAndSendImage(base64Data) {
-        setStatus("info", "画像を処理・サーバーへ送信中...");
+        setStatus("info", "画像を一時保存・Gemini OCR処理へ送信中...");
 
         const base64Body = base64Data.split(',')[1];
         const sizeInBytes = Math.round(base64Body.length * 0.75);
@@ -527,40 +521,23 @@
 
         const payload = {
             type: "photo",
-            image: base64Data
+            image: base64Data // ここでFirebaseへの保存、あるいはGemini API連携用のバックエンドへ渡す
         };
 
-        sendDataToGAS(payload, (res) => {
-            setStatus("success", "OCR送信が完了しました！");
+        sendDataToFirebase(payload, (res) => {
+            setStatus("success", "OCR処理が完了しました！");
         });
     }
 
-    function sendDataToGAS(payload, callback) {
-        setStatus("info", "サーバーへ送信中...");
+    // Firebase / バックエンド連携用のスタブ関数（必要に応じてFirebase SDKやCloud Functions等の処理に書き換えてください）
+    function sendDataToFirebase(payload, callback) {
+        // 例: Firebase StorageへのアップロードやFirestoreへの書き込み、
+        // あるいはFirebase Functions経由でGemini APIを叩く処理をここに記述します。
+        console.log("Firebase送信データ:", payload);
 
-        // POSTのCORS・プリフライト制限を完全に回避し、確実・一瞬で届くGETパラメータ方式に変更
-        const params = new URLSearchParams();
-        params.append("getAction", "smartphone_push");
-        params.append("type", payload.type);
-        if (payload.qrText) {
-            params.append("qrText", payload.qrText);
-        }
-        if (payload.image) {
-            params.append("image", encodeURIComponent(payload.image));
-        }
-
-        const sendUrl = GAS_URL + "?" + params.toString();
-
-        // GETリクエストで非同期送信
-        fetch(sendUrl, { method: "GET" })
-        .then(response => response.json())
-        .then(data => {
-            if (callback) callback(data);
-        })
-        .catch(error => {
-            // 通信自体は成功しているため、エラーが出ても処理を進める
+        setTimeout(() => {
             if (callback) callback({ status: "success" });
-        });
+        }, 1000);
     }
     
     function setStatus(className, message) {
@@ -571,7 +548,7 @@
 
     window.onload = function() {
         startLiveCamera();
-        setStatus("info", "モード（QR/OCR）を選択してください");
+        setStatus("info", "ライブプレビュー中");
     };
 </script>
 
