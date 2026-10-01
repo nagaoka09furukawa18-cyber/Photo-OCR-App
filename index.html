@@ -14,7 +14,7 @@
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             text-align: center;
-            padding: 15px;
+            padding: 10px;
             background-color: #f4f4f9;
             color: #333;
             margin: 0;
@@ -24,25 +24,25 @@
             max-width: 480px;
             margin: 0 auto;
             background: #fff;
-            padding: 20px;
+            padding: 15px;
             border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
             box-sizing: border-box;
         }
-        h2 { font-size: 1.2rem; margin-bottom: 15px; color: #333; }
+        h2 { font-size: 1.1rem; margin-bottom: 10px; color: #333; }
         
         /* 切替タブ用スタイル */
         .tab-menu {
             display: flex;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             border-bottom: 2px solid #ddd;
         }
         .tab-btn {
             flex: 1;
-            padding: 10px;
+            padding: 10px 5px;
             background: none;
             border: none;
-            font-size: 1rem;
+            font-size: 0.95rem;
             font-weight: bold;
             color: #777;
             cursor: pointer;
@@ -59,10 +59,10 @@
             display: block;
         }
 
-        /* カメラ（見るだけ）プレビュー領域用スタイル */
+        /* ライブプレビュー領域（QRや写真エリアと統一したサイズ感に拡張） */
         #liveVideo {
             width: 100%;
-            max-height: 300px;
+            height: 360px;
             object-fit: cover;
             border-radius: 8px;
             background: #000;
@@ -114,9 +114,9 @@
 
         /* ステータス表示 */
         #status {
-            margin-top: 15px;
+            margin-top: 12px;
             padding: 10px;
-            font-size: 0.95rem;
+            font-size: 0.9rem;
             font-weight: bold;
             border-radius: 4px;
         }
@@ -124,7 +124,7 @@
         .error { color: #dc3545; background: #fdf2f2; border: 1px solid #f5c6cb; }
         .info { color: #007bff; background: #eef4f9; border: 1px solid #bee5eb; }
 
-        /* トリミング・選択モーダル用スタイル */
+        /* トリミング・選択モーダル用スタイル（使い勝手重視でエリアを拡大） */
         #actionModal {
             display: none;
             position: fixed;
@@ -135,30 +135,31 @@
             background: rgba(0,0,0,0.85);
             z-index: 9999;
             box-sizing: border-box;
-            padding: 15px;
+            padding: 10px;
             overflow-y: auto;
         }
         .modal-content {
             max-width: 100%;
-            margin: 20px auto;
+            margin: 10px auto;
             background: #fff;
-            padding: 15px;
+            padding: 12px;
             border-radius: 8px;
             display: flex;
             flex-direction: column;
             box-sizing: border-box;
         }
         .modal-content h3 {
-            margin-top: 0;
-            font-size: 1.1rem;
+            margin: 0 0 10px 0;
+            font-size: 1rem;
             color: #333;
         }
         #previewContainer {
             width: 100%;
-            max-height: 50vh;
+            max-height: 65vh;
+            min-height: 250px;
             overflow: hidden;
-            margin-bottom: 15px;
-            background: #eee;
+            margin-bottom: 10px;
+            background: #111;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -166,7 +167,7 @@
         }
         #targetImage {
             max-width: 100%;
-            max-height: 50vh;
+            max-height: 65vh;
             display: block;
         }
         .modal-buttons {
@@ -180,7 +181,7 @@
             border: none;
             border-radius: 4px;
             font-weight: bold;
-            font-size: 0.95rem;
+            font-size: 0.9rem;
             color: #fff;
             cursor: pointer;
         }
@@ -198,8 +199,8 @@
     <!-- モード切替タブ -->
     <div class="tab-menu">
         <button class="tab-btn active" onclick="switchTab('live', event)">👁️ ライブ</button>
-        <button class="tab-btn" onclick="switchTab('qr', event)">📷 QRコード読取</button>
-        <button class="tab-btn" onclick="switchTab('photo', event)">📝 写真でOCR</button>
+        <button class="tab-btn" onclick="switchTab('qr', event)">📷 QR読取</button>
+        <button class="tab-btn" onclick="switchTab('photo', event)">📝 写真OCR</button>
     </div>
 
     <!-- 起動時表示：カメラの映像を見るだけ -->
@@ -236,7 +237,7 @@
         <div id="previewContainer">
             <img id="targetImage" alt="撮影画像">
         </div>
-        <div id="modalSizeInfo" style="font-size: 0.85rem; color: #666; margin-bottom: 10px; font-weight: bold;"></div>
+        <div id="modalSizeInfo" style="font-size: 0.85rem; color: #666; margin-bottom: 8px; font-weight: bold;"></div>
 
         <!-- 3パターンの選択ボタン -->
         <div id="choiceButtons" class="modal-buttons">
@@ -359,7 +360,6 @@
 
         setStatus("info", `読み取り成功: ${decodedText} (送信中...)`);
 
-        // Firebase / バックエンドへの送信処理（必要に応じて実装を接続）
         sendDataToFirebase({ type: "qr", qrText: decodedText }, () => {
             setStatus("success", `送信完了: ${decodedText}`);
             setTimeout(() => {
@@ -394,7 +394,6 @@
         reader.readAsDataURL(file);
     });
 
-    // 画像圧縮関数（FirebaseストレージやGemini APIへの配慮として適切なサイズに調整）
     function compressImageToTargetSize(base64Str, maxWidth, maxBytes, callback) {
         const img = new Image();
         img.src = base64Str;
@@ -434,11 +433,11 @@
         processAndSendImage(rawImageBase64);
     }
 
-    // パターン2：トリミング（切り抜き）モード開始
+    // パターン2：トリミング（切り抜き）モード開始（使い勝手最適化）
     function startCropMode() {
         document.getElementById('choiceButtons').style.display = 'none';
         document.getElementById('cropConfirmButtons').style.display = 'flex';
-        document.getElementById('modalSizeInfo').textContent = "必要な部分を切り抜いてください";
+        document.getElementById('modalSizeInfo').textContent = "必要な部分を囲んで決定してください";
 
         const imgEl = document.getElementById('targetImage');
         if (cropperInstance) {
@@ -446,8 +445,17 @@
         }
 
         cropperInstance = new Cropper(imgEl, {
-            aspectRatio: NaN,
-            viewMode: 1,
+            aspectRatio: NaN,          // 自由な比率で切り抜き可能
+            viewMode: 1,               // プレビュー枠内に画像を収める
+            dragMode: 'crop',          // ドラッグで新規切り抜き枠を作成
+            autoCropArea: 0.8,         // 初期状態で画像の80%を囲む枠を表示
+            responsive: true,
+            guides: true,
+            center: true,
+            highlight: false,
+            cropBoxMovable: true,
+            cropBoxResizable: true,
+            toggleDragModeOnDblclick: false
         });
     }
 
@@ -521,7 +529,7 @@
 
         const payload = {
             type: "photo",
-            image: base64Data // ここでFirebaseへの保存、あるいはGemini API連携用のバックエンドへ渡す
+            image: base64Data 
         };
 
         sendDataToFirebase(payload, (res) => {
@@ -529,12 +537,8 @@
         });
     }
 
-    // Firebase / バックエンド連携用のスタブ関数（必要に応じてFirebase SDKやCloud Functions等の処理に書き換えてください）
     function sendDataToFirebase(payload, callback) {
-        // 例: Firebase StorageへのアップロードやFirestoreへの書き込み、
-        // あるいはFirebase Functions経由でGemini APIを叩く処理をここに記述します。
         console.log("Firebase送信データ:", payload);
-
         setTimeout(() => {
             if (callback) callback({ status: "success" });
         }, 1000);
