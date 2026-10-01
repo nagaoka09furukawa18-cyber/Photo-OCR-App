@@ -59,13 +59,22 @@
             display: block;
         }
 
-        /* ライブプレビュー領域（QRや写真エリアと統一したサイズ感に拡張） */
+        /* ライブプレビュー領域（QRリーダー側のカメラ画角（縦長）と完全に統一） */
+        .live-video-container {
+            width: 100%;
+            aspect-ratio: 3 / 4; /* スマホカメラの一般的な縦長比率に設定 */
+            max-height: 520px;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
         #liveVideo {
             width: 100%;
-            height: 360px;
-            object-fit: cover;
-            border-radius: 8px;
-            background: #000;
+            height: 100%;
+            object-fit: cover; /* 歪みを防ぎつつエリア全体を満たす */
         }
 
         /* QRリーダーエリア */
@@ -75,8 +84,19 @@
             overflow: hidden;
             background: #fff;
         }
+        /* html5-qrcodeが生成する内部要素のサイズを統一感のある縦長に見せる */
+        #reader video {
+            width: 100% !important;
+            height: auto !important;
+            object-fit: cover;
+            border-radius: 8px;
+        }
 
-        /* 写真撮影ボタン */
+        /* 写真撮影ボタンのコンテナとラベルを確実に動作させる */
+        .form-group {
+            width: 100%;
+            margin-bottom: 15px;
+        }
         .file-btn {
             display: block;
             width: 100%;
@@ -124,7 +144,7 @@
         .error { color: #dc3545; background: #fdf2f2; border: 1px solid #f5c6cb; }
         .info { color: #007bff; background: #eef4f9; border: 1px solid #bee5eb; }
 
-        /* トリミング・選択モーダル用スタイル（使い勝手重視でエリアを拡大） */
+        /* トリミング・選択モーダル用スタイル */
         #actionModal {
             display: none;
             position: fixed;
@@ -203,9 +223,11 @@
         <button class="tab-btn" onclick="switchTab('photo', event)">📝 写真OCR</button>
     </div>
 
-    <!-- 起動時表示：カメラの映像を見るだけ -->
+    <!-- 起動時表示：ライブカメラ（QR読取と同じ縦長スマホカメラの画角に統一） -->
     <div id="tab-live" class="tab-content active">
-        <video id="liveVideo" autoplay playsinline muted></video>
+        <div class="live-video-container">
+            <video id="liveVideo" autoplay playsinline muted></video>
+        </div>
     </div>
 
     <!-- Tab 1: QRコードスキャナー -->
@@ -217,7 +239,7 @@
     <div id="tab-photo" class="tab-content">
         <div class="form-group">
             <label for="cameraInput" class="file-btn">📸 写真を撮影してOCR</label>
-            <input type="file" id="cameraInput" accept="image/*">
+            <input type="file" id="cameraInput" accept="image/*" capture="environment">
         </div>
         <div class="preview-area">
             <img id="previewImg" alt="プレビュー画像">
@@ -292,7 +314,8 @@
         navigator.mediaDevices.getUserMedia({ 
             video: { 
                 facingMode: "environment",
-                advanced: [{ zoom: 2.0 }]
+                width: { ideal: 1280 },
+                height: { ideal: 1920 }
             } 
         })
         .then(stream => {
@@ -330,8 +353,7 @@
             fps: 10,
             qrbox: { width: 250, height: 250 },
             videoConstraints: {
-                facingMode: "environment",
-                advanced: [{ zoom: 2.0 }]
+                facingMode: "environment"
             }
         };
 
@@ -433,7 +455,7 @@
         processAndSendImage(rawImageBase64);
     }
 
-    // パターン2：トリミング（切り抜き）モード開始（使い勝手最適化）
+    // パターン2：トリミング（切り抜き）モード開始
     function startCropMode() {
         document.getElementById('choiceButtons').style.display = 'none';
         document.getElementById('cropConfirmButtons').style.display = 'flex';
@@ -445,10 +467,10 @@
         }
 
         cropperInstance = new Cropper(imgEl, {
-            aspectRatio: NaN,          // 自由な比率で切り抜き可能
-            viewMode: 1,               // プレビュー枠内に画像を収める
-            dragMode: 'crop',          // ドラッグで新規切り抜き枠を作成
-            autoCropArea: 0.8,         // 初期状態で画像の80%を囲む枠を表示
+            aspectRatio: NaN,
+            viewMode: 1,
+            dragMode: 'crop',
+            autoCropArea: 0.8,
             responsive: true,
             guides: true,
             center: true,
