@@ -435,7 +435,10 @@
 
                 const imgEl = document.getElementById('targetImage');
                 imgEl.src = rawImageBase64;
-                document.getElementById('modalSizeInfo').textContent = `画像データ容量: ${sizeKB} KB`;
+                
+                // 容量をリアルタイム表示
+                document.getElementById('modalSizeInfo').textContent = `送信画像容量: ${sizeKB}`;
+                document.getElementById('imageSizeInfo').textContent = `選択画像容量: ${sizeKB}`;
 
                 document.getElementById('actionModal').style.display = 'block';
                 document.getElementById('choiceButtons').style.display = 'flex';
@@ -474,8 +477,15 @@
                 sizeBytes = Math.round((compressedBase64.split(',')[1].length) * 0.75);
             }
 
-            let sizeKB = (sizeBytes / 1024).toFixed(1);
-            callback(compressedBase64, sizeKB);
+            // バイト / KB の見やすい容量表記を作成
+            let sizeDisplay = '';
+            if (sizeBytes < 1024 * 1024) {
+                sizeDisplay = (sizeBytes / 1024).toFixed(1) + ' KB (' + sizeBytes.toLocaleString() + ' bytes)';
+            } else {
+                sizeDisplay = (sizeBytes / (1024 * 1024)).toFixed(2) + ' MB (' + sizeBytes.toLocaleString() + ' bytes)';
+            }
+
+            callback(compressedBase64, sizeDisplay);
         };
     }
 
@@ -506,7 +516,20 @@
             highlight: false,
             cropBoxMovable: true,
             cropBoxResizable: true,
-            toggleDragModeOnDblclick: false
+            toggleDragModeOnDblclick: false,
+            crop: function() {
+                // トリミング範囲変更中にもリアルタイムで容量計算して表示
+                const canvas = cropperInstance.getCroppedCanvas({
+                    maxWidth: 1200,
+                    maxHeight: 1200,
+                });
+                if (canvas) {
+                    const tempBase64 = canvas.toDataURL('image/jpeg', 0.9);
+                    const tempBytes = Math.round((tempBase64.split(',')[1].length) * 0.75);
+                    const tempKB = (tempBytes / 1024).toFixed(1) + ' KB (' + tempBytes.toLocaleString() + ' bytes)';
+                    document.getElementById('modalSizeInfo').textContent = `トリミング後容量: ${tempKB}`;
+                }
+            }
         });
     }
 
@@ -541,8 +564,9 @@
         imgEl.src = rawImageBase64;
         
         const base64Body = rawImageBase64.split(',')[1];
-        const sizeKB = (Math.round(base64Body.length * 0.75) / 1024).toFixed(1);
-        document.getElementById('modalSizeInfo').textContent = `画像データ容量: ${sizeKB} KB`;
+        const bytes = Math.round(base64Body.length * 0.75);
+        const sizeStr = (bytes / 1024).toFixed(1) + ' KB (' + bytes.toLocaleString() + ' bytes)';
+        document.getElementById('modalSizeInfo').textContent = `送信画像容量: ${sizeStr}`;
 
         document.getElementById('choiceButtons').style.display = 'flex';
         document.getElementById('cropConfirmButtons').style.display = 'none';
@@ -563,30 +587,46 @@
         document.getElementById('cameraInput').value = '';
     }
 
-    // 写真データ：Firebase Storageへ一時アップロードする関数
+    // 写真データ：Base64のFirestore保存 ＆ Firebase Storage一時アップロード処理
     function uploadImageToStorageAndProcess(base64Data) {
-        setStatus("info", "Firebase Storageへ画像を一時保存中...");
+        setStatus("info", "画像をBase64形式でFirestoreへ保存中...");
 
         const preview = document.getElementById("previewImg");
         preview.src = base64Data;
         preview.style.display = "inline-block";
 
-        const fileName = `ocr_temp_${Date.now()}.jpg`;
-        const storageRef = storage.ref().child(`temp_images/${fileName}`);
+        // 1. FirestoreへBase64文字列として直接保存
+        db.collection("scans").add({
+            type: "photo_ocr",
+            imageBase64: base64Data,  // Base64テキストデータ保存
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        })
+        .then(() => {
+            setStatus("info", "Firestore保存完了。Storageへ一時アップロード中...");
 
-        storageRef.putString(base64Data, 'data_url').then((snapshot) => {
-            setStatus("info", "一時保存完了。OCR処理へ連携中...");
-            
-            storageRef.delete().then(() => {
-                console.log("一時画像をStorageから正常に削除しました");
-            }).catch((err) => {
-                console.warn("一時画像の削除に失敗しました:", err);
+            // 2. 既存のFirebase Storage一時保存処理
+            const fileName = `ocr_temp_${Date.now()}.jpg`;
+            const storageRef = storage.ref().child(`temp_images/${fileName}`);
+
+            storageRef.putString(base64Data, 'data_url').then((snapshot) => {
+                setStatus("info", "一時保存完了。OCR処理へ連携中...");
+                
+                storageRef.delete().then(() => {
+                    console.log("一時画像をStorageから正常に削除しました");
+                }).catch((err) => {
+                    console.warn("一時画像の削除に失敗しました:", err);
+                });
+
+                setStatus("success", "Base64保存 ＆ OCR処理が完了しました！");
+            }).catch((error) => {
+                console.error("Storageアップロードエラー: ", error);
+                setStatus("error", "Storageへの送信に失敗しました");
             });
 
-            setStatus("success", "OCR処理が完了しました！");
-        }).catch((error) => {
-            console.error("Storageアップロードエラー: ", error);
-            setStatus("error", "画像の送信に失敗しました");
+        })
+        .catch((error) => {
+            console.error("Firestore保存エラー: ", error);
+            setStatus("error", "FirestoreへのBase64データ保存に失敗しました");
         });
     }
     
