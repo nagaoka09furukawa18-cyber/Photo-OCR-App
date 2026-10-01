@@ -400,23 +400,24 @@
 
         setStatus("info", `読み取り成功: ${decodedText} (Firestore送信中...)`);
 
-        db.collection("scans").add({
-            type: "qr",
-            content: decodedText,
-            timestamp: firebase.firestore.FieldValue.serverTimestamp()
-        })
-        .then(() => {
-            setStatus("success", `保存完了: ${decodedText}`);
-            setTimeout(() => {
-                isSending = false;
-                setStatus("info", "次のQRコードを読み取ってください");
-            }, 2000);
-        })
-        .catch((error) => {
-            console.error("Firestore保存エラー: ", error);
-            setStatus("error", "データ保存失敗: " + error.message);
-            isSending = false;
-        });
+// 変更後: ドキュメントIDを "latest_data" に固定して上書き保存
+db.collection("scans").doc("latest_data").set({
+    type: "qr",
+    content: decodedText,
+    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+})
+.then(() => {
+    setStatus("success", `保存・更新完了: ${decodedText}`);
+    setTimeout(() => {
+        isSending = false;
+        setStatus("info", "次のQRコードを読み取ってください");
+    }, 2000);
+})
+.catch((error) => {
+    console.error("Firestore保存エラー: ", error);
+    setStatus("error", "データの保存に失敗しました");
+    isSending = false;
+});
     }
 
     // 写真撮影・圧縮
@@ -584,26 +585,27 @@
 
     // --- FirestoreへBase64データを直接保存（余分な拡張機能の呼び出しを完全排除） ---
     function saveBase64ToFirestore(base64Data) {
-        setStatus("info", "画像をBase64形式でFirestoreへ直接保存中...");
+    setStatus("info", "画像をBase64形式でFirestoreへ上書き保存中...");
 
-        const preview = document.getElementById("previewImg");
-        preview.src = base64Data;
-        preview.style.display = "inline-block";
+    const preview = document.getElementById("previewImg");
+    preview.src = base64Data;
+    preview.style.display = "inline-block";
 
-        db.collection("scans").add({
-            type: "photo_ocr",
-            imageBase64: base64Data,  // 500KB以下のBase64テキストデータ
-            timestamp: firebase.firestore.FieldValue.serverTimestamp()
-        })
-        .then((docRef) => {
-            console.log("Document written with ID: ", docRef.id);
-            setStatus("success", `Firestoreへの画像保存が完了しました！ (ID: ${docRef.id})`);
-        })
-        .catch((error) => {
-            console.error("Firestore保存エラー: ", error);
-            setStatus("error", "保存失敗: " + error.message);
-        });
-    }
+    // ドキュメントIDを "latest_data" に固定して上書き保存
+    db.collection("scans").doc("latest_data").set({
+        type: "photo_ocr",
+        imageBase64: base64Data,  // 500KB以下のBase64テキストデータ
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    })
+    .then(() => {
+        console.log("Document successfully overwritten!");
+        setStatus("success", "最新データの保存（上書き）が完了しました！");
+    })
+    .catch((error) => {
+        console.error("Firestore保存エラー: ", error);
+        setStatus("error", "保存失敗: " + error.message);
+    });
+}
     
     function setStatus(className, message) {
         const statusEl = document.getElementById('status');
