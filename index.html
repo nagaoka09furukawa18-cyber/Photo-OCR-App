@@ -159,7 +159,7 @@
         }
         .modal-content {
             max-width: 440px;
-            margin: 20px auto;
+            margin: 10px auto;
             background: #fff;
             padding: 15px;
             border-radius: 8px;
@@ -172,9 +172,11 @@
             font-size: 1rem;
             color: #333;
         }
+        /* ★撮影時のカメラサイズ（縦長比率 3/4）に合わせたプレビューコンテナ */
         #previewContainer {
             width: 100%;
-            height: 320px;
+            aspect-ratio: 3 / 4;
+            max-height: 60vh;
             overflow: hidden;
             margin-bottom: 10px;
             background: #111;
@@ -212,15 +214,13 @@
            【スマホ・タッチ操作最適化】Cropper.js ハンドル拡大カスタム
            ========================================== */
         .cropper-point {
-            width: 22px !important;   /* 四隅・四辺のつまみを大きくして触りやすくする */
+            width: 22px !important;
             height: 22px !important;
             background-color: #3498db !important;
             opacity: 0.9 !important;
-            border-radius: 50% !important; /* 丸型にして直感的に */
-            /* 当たり判定（タッチ領域）をさらに広げるための外側オフセット */
+            border-radius: 50% !important;
             margin: -6px 0 0 -6px; 
         }
-        /* 四隅のハンドルの位置微調整 */
         .cropper-point.point-se { width: 26px !important; height: 26px !important; }
     </style>
 </head>
