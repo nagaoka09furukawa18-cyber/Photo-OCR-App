@@ -172,7 +172,6 @@
             font-size: 1rem;
             color: #333;
         }
-        /* トリミングプレビューを操作しやすく見やすく固定 */
         #previewContainer {
             width: 100%;
             height: 320px;
@@ -208,6 +207,21 @@
         .btn-crop { background: #3498db; }
         .btn-retake { background: #e74c3c; }
         .btn-back { background: #95a5a6; }
+
+        /* ==========================================
+           【スマホ・タッチ操作最適化】Cropper.js ハンドル拡大カスタム
+           ========================================== */
+        .cropper-point {
+            width: 22px !important;   /* 四隅・四辺のつまみを大きくして触りやすくする */
+            height: 22px !important;
+            background-color: #3498db !important;
+            opacity: 0.9 !important;
+            border-radius: 50% !important; /* 丸型にして直感的に */
+            /* 当たり判定（タッチ領域）をさらに広げるための外側オフセット */
+            margin: -6px 0 0 -6px; 
+        }
+        /* 四隅のハンドルの位置微調整 */
+        .cropper-point.point-se { width: 26px !important; height: 26px !important; }
     </style>
 </head>
 <body>
@@ -458,7 +472,7 @@
     function startCropMode() {
         document.getElementById('choiceButtons').style.display = 'none';
         document.getElementById('cropConfirmButtons').style.display = 'flex';
-        document.getElementById('modalSizeInfo').textContent = "枠を動かして必要な部分を囲んでください";
+        document.getElementById('modalSizeInfo').textContent = "四隅や枠を動かして必要な部分を囲んでください";
 
         const imgEl = document.getElementById('targetImage');
         if (cropperInstance) {
@@ -466,17 +480,17 @@
         }
 
         cropperInstance = new Cropper(imgEl, {
-            aspectRatio: NaN,          // 自由な比率で切り抜き可能
-            viewMode: 1,               // 画像の外側に枠が出ないように制限
-            dragMode: 'crop',          // 新しい枠を作成可能
-            autoCropArea: 0.9,         // 初期状態で画面いっぱいに近いサイズで枠を表示
+            aspectRatio: NaN,
+            viewMode: 1,
+            dragMode: 'crop',
+            autoCropArea: 0.85,
             responsive: true,
             restore: true,
             guides: true,
             center: true,
             highlight: false,
-            cropBoxMovable: true,      // 枠の移動が可能
-            cropBoxResizable: true,    // 枠のサイズ変更が可能
+            cropBoxMovable: true,
+            cropBoxResizable: true,
             toggleDragModeOnDblclick: false
         });
     }
