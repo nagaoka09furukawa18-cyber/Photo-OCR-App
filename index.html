@@ -10,10 +10,9 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
 
-    <!-- Firebase SDK (Compat版) -->
+    <!-- Firebase SDK (Compat版) - Firestoreのみ -->
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 
     <style>
         body {
@@ -64,7 +63,7 @@
             display: block;
         }
 
-        /* ライブプレビュー領域（スマホカメラの縦長比率） */
+        /* ライブプレビュー領域 */
         .live-video-container {
             width: 100%;
             aspect-ratio: 3 / 4;
@@ -143,6 +142,7 @@
             font-size: 0.9rem;
             font-weight: bold;
             border-radius: 4px;
+            word-break: break-all;
         }
         .success { color: #28a745; background: #eef9f2; border: 1px solid #d4edda; }
         .error { color: #dc3545; background: #fdf2f2; border: 1px solid #f5c6cb; }
@@ -216,7 +216,6 @@
         .btn-retake { background: #e74c3c; }
         .btn-back { background: #95a5a6; }
 
-        /* Cropper.js ハンドル拡大カスタム */
         .cropper-point {
             width: 22px !important;
             height: 22px !important;
@@ -292,21 +291,20 @@
 </div>
 
 <script>
-    // --- Firebase 初期設定 ---
+    // --- Firebase 初期設定（Firestoreのみ） ---
     const firebaseConfig = {
         apiKey: "AIzaSyCn3nBXukyJ7HqZQudIruiG8JRejUb8x7A",
         authDomain: "imageocr-b1f78.firebaseapp.com",
         projectId: "imageocr-b1f78",
-        storageBucket: "imageocr-b1f78.firebasestorage.app",
         messagingSenderId: "524688602430",
-        appId: "1:524688602430:web:5e993414e427dc1e59e86f",
-        measurementId: "G-C2KR51YJHY"
+        appId: "1:524688602430:web:5e993414e427dc1e59e86f"
     };
 
-    // 初期化
-    firebase.initializeApp(firebaseConfig);
+    // 初期化実行
+    if (!firebase.apps.length) {
+        firebase.initializeApp(firebaseConfig);
+    }
     const db = firebase.firestore();
-    const storage = firebase.storage();
 
     let isSending = false;
     let html5QrCode = null;
@@ -416,7 +414,7 @@
         })
         .catch((error) => {
             console.error("Firestore保存エラー: ", error);
-            setStatus("error", "データの保存に失敗しました");
+            setStatus("error", "データ保存失敗: " + error.message);
             isSending = false;
         });
     }
@@ -436,7 +434,6 @@
                 const imgEl = document.getElementById('targetImage');
                 imgEl.src = rawImageBase64;
                 
-                // 容量をリアルタイム表示
                 document.getElementById('modalSizeInfo').textContent = `送信画像容量: ${sizeKB}`;
                 document.getElementById('imageSizeInfo').textContent = `選択画像容量: ${sizeKB}`;
 
@@ -477,7 +474,6 @@
                 sizeBytes = Math.round((compressedBase64.split(',')[1].length) * 0.75);
             }
 
-            // バイト / KB の見やすい容量表記を作成
             let sizeDisplay = '';
             if (sizeBytes < 1024 * 1024) {
                 sizeDisplay = (sizeBytes / 1024).toFixed(1) + ' KB (' + sizeBytes.toLocaleString() + ' bytes)';
@@ -491,7 +487,7 @@
 
     function sendAsIs() {
         closeModal();
-        uploadImageToStorageAndProcess(rawImageBase64);
+        saveBase64ToFirestore(rawImageBase64);
     }
 
     function startCropMode() {
@@ -518,7 +514,6 @@
             cropBoxResizable: true,
             toggleDragModeOnDblclick: false,
             crop: function() {
-                // トリミング範囲変更中にもリアルタイムで容量計算して表示
                 const canvas = cropperInstance.getCroppedCanvas({
                     maxWidth: 1200,
                     maxHeight: 1200,
@@ -552,7 +547,7 @@
         }
 
         closeModal();
-        uploadImageToStorageAndProcess(croppedBase64);
+        saveBase64ToFirestore(croppedBase64);
     }
 
     function cancelCrop() {
@@ -587,46 +582,26 @@
         document.getElementById('cameraInput').value = '';
     }
 
-    // 写真データ：Base64のFirestore保存 ＆ Firebase Storage一時アップロード処理
-    function uploadImageToStorageAndProcess(base64Data) {
-        setStatus("info", "画像をBase64形式でFirestoreへ保存中...");
+    // --- FirestoreへBase64データを直接保存（余分な拡張機能の呼び出しを完全排除） ---
+    function saveBase64ToFirestore(base64Data) {
+        setStatus("info", "画像をBase64形式でFirestoreへ直接保存中...");
 
         const preview = document.getElementById("previewImg");
         preview.src = base64Data;
         preview.style.display = "inline-block";
 
-        // 1. FirestoreへBase64文字列として直接保存
         db.collection("scans").add({
             type: "photo_ocr",
-            imageBase64: base64Data,  // Base64テキストデータ保存
+            imageBase64: base64Data,  // 500KB以下のBase64テキストデータ
             timestamp: firebase.firestore.FieldValue.serverTimestamp()
         })
-        .then(() => {
-            setStatus("info", "Firestore保存完了。Storageへ一時アップロード中...");
-
-            // 2. 既存のFirebase Storage一時保存処理
-            const fileName = `ocr_temp_${Date.now()}.jpg`;
-            const storageRef = storage.ref().child(`temp_images/${fileName}`);
-
-            storageRef.putString(base64Data, 'data_url').then((snapshot) => {
-                setStatus("info", "一時保存完了。OCR処理へ連携中...");
-                
-                storageRef.delete().then(() => {
-                    console.log("一時画像をStorageから正常に削除しました");
-                }).catch((err) => {
-                    console.warn("一時画像の削除に失敗しました:", err);
-                });
-
-                setStatus("success", "Base64保存 ＆ OCR処理が完了しました！");
-            }).catch((error) => {
-                console.error("Storageアップロードエラー: ", error);
-                setStatus("error", "Storageへの送信に失敗しました");
-            });
-
+        .then((docRef) => {
+            console.log("Document written with ID: ", docRef.id);
+            setStatus("success", `Firestoreへの画像保存が完了しました！ (ID: ${docRef.id})`);
         })
         .catch((error) => {
             console.error("Firestore保存エラー: ", error);
-            setStatus("error", "FirestoreへのBase64データ保存に失敗しました");
+            setStatus("error", "保存失敗: " + error.message);
         });
     }
     
